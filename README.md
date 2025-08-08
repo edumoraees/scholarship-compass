@@ -16,10 +16,10 @@
 
 ## **Sprints**
 
-- [Sprint 1](/Sprint%201/README.md.)
+- [Sprint 1](/Sprint%201/README.md)
 
 
-
+    
 
 
 
