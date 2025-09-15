@@ -1,0 +1,28 @@
+services:
+  etl:
+    build:
+      context: ./etapa-1
+      dockerfile: Dockerfile
+    image: desafio-etl
+    container_name: desafio_etl
+    environment:
+      - INPUT=/volume/concert_tours_by_women.csv
+      - OUTPUT_DIR=/volume
+    volumes:
+      - ./Volume:/volume
+
+  job:
+    build:
+      context: ./etapa-2
+      dockerfile: Dockerfile
+    image: desafio-job
+    container_name: desafio_job
+    depends_on:
+      etl:
+        condition: service_completed_successfully
+    environment:
+      - INPUT=/volume/csv_limpo.csv
+      - OUTPUT_DIR=/volume
+      - MPLBACKEND=Agg       
+    volumes:
+      - ./Volume:/volume

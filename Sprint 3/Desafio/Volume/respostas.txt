@@ -1,0 +1,12 @@
+Q1:
+    Artista que mais aparece: Taylor Swift (4 ocorrências). Média de Actual gross dessa artista: 381518786.50
+    Maior média de Actual gross (geral): Taylor Swift (381518786.50)
+
+Q2:
+    Turnê de um ano com maior Average gross: Renaissance World Tour (Beyoncé, 2023) -> 10353571.00
+
+Q3:
+    Top 3 turnês por receita unitária (Adjusted/Shows):
+    - The Eras Tour (Taylor Swift) -> 13928571.43
+    - Renaissance World Tour (Beyoncé) -> 10353571.43
+    - Reputation Stadium Tour (Taylor Swift) -> 7600846.21
