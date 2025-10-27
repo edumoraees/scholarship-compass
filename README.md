@@ -21,3 +21,4 @@
 - [Sprint 3](/Sprint%203/README.md)
 - [Sprint 4](/Sprint%204/README.md)
 - [Sprint 5](/Sprint%205/README.md)
+- [Sprint 6](/Sprint%206/README.md)
