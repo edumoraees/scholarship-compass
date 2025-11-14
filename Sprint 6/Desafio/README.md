@@ -9,8 +9,8 @@ O objetivo desta entrega foi praticar a integração dos serviços da AWS estuda
 
 ### 1️⃣ Criação dos Jobs no AWS Glue
 Foram criados **dois jobs Spark** no serviço AWS Glue:
-- **`glue_process_csv`** → responsável por processar os dados em formato CSV vindos da camada *Raw/Local*.
-- **`glue_process_json`** → responsável por processar os dados em formato JSON vindos da API TMDB.
+- **`glue_trusted_csv`** → responsável por processar os dados em formato CSV vindos da camada *Raw/Local*.
+- **`glue_trusted_json`** → responsável por processar os dados em formato JSON vindos da API TMDB.
 
 Os dois jobs foram criados através do **Spark Script Editor**, conforme as boas práticas descritas no desafio.
 
@@ -33,10 +33,10 @@ s3://data-lake-luis/Raw/Local/CSV/series/2025/10/09/series.csv
 ### 🗃️ Saída (Trusted Zone)
 Após o processamento via AWS Glue, os dados foram transformados em **arquivos Parquet (Snappy)** e salvos na **Trusted Zone**:
 
-s3://data-lake-luis/Trusted/CSV/
-s3://data-lake-luis/Trusted/JSON/
+LOCAL: s3://data-lake-luis/Trusted/Local/PARQUET/Series/
+LOCAL: s3://data-lake-luis/Trusted/Local/PARQUET/Movies/
 
-
+TMBD: s3://data-lake-luis/Trusted/TMDB/PARQUET/MoviesSeries/
 ---
 
 ## ⚙️ Detalhes Técnicos do Processamento
