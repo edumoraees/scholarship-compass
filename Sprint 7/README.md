@@ -1,195 +1,192 @@
 # 🧾 Documentação – Etapa Trusted e Refined
+# 📘 Parte 3 – Construção da Camada REFINED (Trusted → Refined)
+
+Este documento descreve todo o processo realizado na Parte 3 do projeto de Data Lake, responsável pela modelagem e criação da camada **Refined** no S3, utilizando AWS Glue e Spark.
 
 ---
 
-## 🎯 Objetivo
+## 🏗️ Arquitetura da Parte 3
 
-Transformar os dados das camadas **Raw** → **Trusted** → **Refined** dentro do Data Lake no S3, padronizando e preparando os datasets para análise no Amazon Athena e futura visualização no Amazon QuickSight.
-
----
-
-## 🗺️ Fluxo da Pipeline
+O fluxo desta etapa foca em consumir os dados da camada **Trusted** e transformá-los para a camada **Refined**.
 
 > ```text
-> S3 (Raw)
-> ├── Local/CSV/movies/
-> └── Local/CSV/series/
+> RAW (CSV + JSON)
 >     ↓
-> AWS Glue Job (glue_process_csv)
+> TRUSTED (Parquet padronizado)
 >     ↓
-> S3 (Trusted)
-> ├── CSV/
-> └── JSON/
->     ↓
-> AWS Glue Job (glue_process_refined)
->     ↓
-> S3 (Refined)
-> ├── Filmes/
-> └── Series/
->     ↓
-> AWS Glue Catalog + Athena
->     ↓
-> QuickSight (Gold Layer - visualização)
+> REFINED (Modelo analítico)
 > ```
 
+Nesta etapa, utilizamos como fonte os dados já padronizados na camada Trusted:
+
+* **Movies:** `s3://data-lake-luis/Trusted/Local/PARQUET/Movies/`
+* **Series:** `s3://data-lake-luis/Trusted/Local/PARQUET/Series/`
+* **TMDB:** `s3://data-lake-luis/Trusted/TMDB/PARQUET/MoviesSeries/`
+
 ---
 
-## ⚙️ 1. Job Glue – Trusted Layer (glue_process_csv.py)
+## 🎯 Objetivo da Parte 3
 
-### Função
+Transformar os dados da Trusted em uma única tabela refinada, aplicando as seguintes regras de negócio e estruturais:
 
-* Ler recursivamente os arquivos CSV das pastas de filmes e séries.
-* Detectar o schema automaticamente (`inferSchema`).
-* Adicionar metadados (colunas `origem`, `data_processamento`).
-* Salvar em formato **Parquet** na camada Trusted.
+✔ **Unificação:** Filmes + Séries unificados em um único dataset.
+✔ **Enriquecimento:** Dados do CSV local enriquecidos com as informações da API do TMDB.
+✔ **Limpeza e Filtragens Obrigatórias:**
+* Apenas gêneros **Thriller (53)** ou **Horror (27)**.
+* Nota média (`vote_average`) > 0.
+* Quantidade de votos (`vote_count`) > 5.
+* Data de lançamento (`release_date`) entre 2012 e 2022.
+✔ **Modelo Dimensional:** Geração de um modelo dimensional único.
+✔ **Formato:** Escrita no S3 em formato **Parquet**.
+✔ **Particionamento:** Tabela particionada por `ano`, `mes` e `dia` para otimizar queries.
 
-### Código
+---
+
+## 🗂️ Estrutura Final do S3
+
+A estrutura de armazenamento final na camada Refined segue o padrão Hive para o particionamento:
+
+```text
+data-lake-luis/
+└── Refined/
+    └── FilmesSeries/
+        ├── ano=YYYY/
+        │   ├── mes=MM/
+        │   │   ├── dia=DD/
+        │   │   │   └── part-XXXXX.snappy.parquet
+        ...
+```
+
+---
+
+## 🧠 Modelagem Refined (Resultado Final)
+
+A tabela final `FilmesSeries` é composta pelas seguintes colunas:
+
+| Campo | Descrição |
+| :--- | :--- |
+| **id** | ID do título (TMDB) |
+| **title** | Título (TMDB) |
+| **release_date** | Data de lançamento (TMDB) |
+| **popularity** | Popularidade (TMDB) |
+| **vote_average** | Nota média (TMDB) |
+| **vote_count** | Quantidade de votos (TMDB) |
+| **genre_ids** | Lista de gêneros (TMDB) |
+| **original_language** | Idioma original (TMDB) |
+| **tituloprincipal** | Título principal (CSV) |
+| **anolancamento** | Ano inicial (CSV) |
+| **anotermino** | Ano final (CSV - séries) |
+| **ano** | Ano (Partição) |
+| **mes** | Mês (Partição) |
+| **dia** | Dia (Partição) |
+
+---
+
+## 🛠️ Job Spark Criado no AWS Glue
+
+* **Nome do job:** `glue_refined_data_lake`
+* **Versão do Glue utilizada:** `Glue 3.0 – Spark ETL`
+
+---
+
+## 🧾 Script Utilizado no Job (definitivo)
 
 ```python
 import sys
+from awsglue.transforms import *
 from awsglue.utils import getResolvedOptions
 from pyspark.context import SparkContext
 from awsglue.context import GlueContext
 from awsglue.job import Job
-from pyspark.sql import functions as F
+from pyspark.sql.functions import *
+from pyspark.sql.types import *
 
 args = getResolvedOptions(sys.argv, ["JOB_NAME"])
+
 sc = SparkContext()
 glueContext = GlueContext(sc)
 spark = glueContext.spark_session
 job = Job(glueContext)
 job.init(args["JOB_NAME"], args)
 
-def read_csv_recursive(path, origem):
-    df = (
-        spark.read
-        .option("header", True)
-        .option("delimiter", "|")
-        .option("quote", '"')
-        .option("escape", '"')
-        .option("inferSchema", True)
-        .option("recursiveFileLookup", True)
-        .csv(path)
-        .withColumn("origem", F.lit(origem))
-        .withColumn("data_processamento", F.current_timestamp())
+
+# 📌 INPUT TRUSTED
+
+trusted_movies_path = "s3://data-lake-luis/Trusted/Local/PARQUET/Movies/"
+trusted_series_path = "s3://data-lake-luis/Trusted/Local/PARQUET/Series/"
+trusted_tmdb_path   = "s3://data-lake-luis/Trusted/TMDB/PARQUET/MoviesSeries/"
+
+movies_df = spark.read.parquet(trusted_movies_path)
+series_df = spark.read.parquet(trusted_series_path)
+tmdb_df   = spark.read.parquet(trusted_tmdb_path)
+
+# Unifica movies + series (CSV refinado)
+csv_df = movies_df.unionByName(series_df, allowMissingColumns=True)
+
+
+# 🧹 FILTROS DO TMDB
+
+filtered_tmdb = (
+    tmdb_df
+    .filter(array_contains(col("genre_ids"), 53) | array_contains(col("genre_ids"), 27))
+    .filter(col("vote_average") > 0)
+    .filter(col("vote_count") > 5)
+    .filter(year(col("release_date")).between(2012, 2022))
+)
+
+
+# 🔗 JOIN CSV + TMDB
+
+# Faz o LEFT JOIN mantendo o TMDB como base (pois já está filtrado)
+refined_df = (
+    filtered_tmdb.alias("tmdb")
+    .join(csv_df.alias("csv"), col("tmdb.id") == col("csv.id"), "left")
+)
+
+
+# 🧱 AJUSTE FINAL DAS COLUNAS
+
+final_df = (
+    refined_df.select(
+        col("tmdb.id").alias("id"),
+        col("tmdb.title").alias("title"),
+        col("tmdb.release_date"),
+        col("tmdb.popularity"),
+        col("tmdb.vote_average"),
+        col("tmdb.vote_count"),
+        col("tmdb.genre_ids"),
+        col("tmdb.original_language"),
+        col("csv.tituloprincipal"),
+        col("csv.anolancamento"),
+        col("csv.anotermino"),
     )
-    return df
+    .withColumn("ano", year(col("release_date")))
+    .withColumn("mes", month(col("release_date")))
+    .withColumn("dia", dayofmonth(col("release_date")))
+)
 
-raw_movies_path = "s3://data-lake-luis/Raw/Local/CSV/movies/"
-raw_series_path = "s3://data-lake-luis/Raw/Local/CSV/series/"
-trusted_output_path = "s3://data-lake-luis/Trusted/CSV/"
 
-movies_df = read_csv_recursive(raw_movies_path, "movies")
-series_df = read_csv_recursive(raw_series_path, "series")
+# 💾 SALVA A CAMADA REFINED
 
-df_union = movies_df.unionByName(series_df, allowMissingColumns=True)
+refined_path = "s3://data-lake-luis/Refined/FilmesSeries/"
 
 (
-    df_union.write
+    final_df
+    .write
     .mode("overwrite")
-    .format("parquet")
-    .save(trusted_output_path)
+    .partitionBy("ano", "mes", "dia")
+    .parquet(refined_path)
 )
 
 job.commit()
 ```
 
-### ✅ Resultado Esperado
-
-* Arquivos Parquet criados em `s3://data-lake-luis/Trusted/CSV/`
-* Colunas padronizadas.
-* Campos adicionados: `origem`, `data_processamento`.
-
 ---
 
-## 🧩 2. Job Glue – Refined Layer (glue_process_refined.py)
+## 🔍 Crawler da Refined
 
-### Função
+Para expor os dados ao Athena, um crawler foi criado com as seguintes especificações:
 
-* Ler dados da camada **Trusted** (provenientes de CSV e JSON).
-* Padronizar colunas (remover espaços, converter para minúsculas) e corrigir formatações.
-* Adicionar coluna `data_refinado`.
-* Salvar dados finalizados e separados nas pastas `Filmes` e `Series`.
-
-### Código
-
-```python
-import sys
-from awsglue.utils import getResolvedOptions
-from pyspark.context import SparkContext
-from awsglue.context import GlueContext
-from awsglue.job import Job
-from awsglue.dynamicframe import DynamicFrame
-from pyspark.sql import functions as F
-
-args = getResolvedOptions(sys.argv, ["JOB_NAME"])
-sc = SparkContext()
-glueContext = GlueContext(sc)
-spark = glueContext.spark_session
-job = Job(glueContext)
-job.init(args["JOB_NAME"], args)
-
-trusted_csv_path = "s3://data-lake-luis/Trusted/CSV/"
-trusted_json_path = "s3://data-lake-luis/Trusted/JSON/"
-
-# 🔹 Leitura unificada da camada Trusted
-df_trusted = (
-    glueContext.create_dynamic_frame.from_options(
-        connection_type="s3",
-        connection_options={"paths": [trusted_csv_path, trusted_json_path]},
-        format="parquet"
-    ).toDF()
-)
-
-# 🔹 Padronização de nomes e limpeza
-df_trusted = df_trusted.dropDuplicates()
-for col in df_trusted.columns:
-    df_trusted = df_trusted.withColumnRenamed(col, col.strip().lower())
-
-df_trusted = df_trusted.withColumn("data_refinado", F.current_date())
-
-# 🔹 Separação em filmes e séries
-df_filmes = df_trusted.filter(F.col("origem") == "movies")
-df_series = df_trusted.filter(F.col("origem") == "series")
-
-# 🔹 Escrita no S3 Refined
-def salvar(df, caminho):
-    dynamic = DynamicFrame.fromDF(df, glueContext, "dynamic")
-    glueContext.write_dynamic_frame.from_options(
-        frame=dynamic,
-        connection_type="s3",
-        connection_options={"path": caminho},
-        format="parquet"
-    )
-
-salvar(df_filmes, "s3://data-lake-luis/Refined/Filmes/")
-salvar(df_series, "s3://data-lake-luis/Refined/Series/")
-
-job.commit()
-```
-
-### ✅ Resultado Esperado
-
-* Dados gravados em `s3://data-lake-luis/Refined/Filmes/`
-* Dados gravados em `s3://data-lake-luis/Refined/Series/`
-* Colunas com nomes padronizados (ex: `tituloprincipal`, `genero`, `notamedia`, etc).
-* Campos extras: `origem`, `data_refinado`.
-
----
-
-## 🏛️ 3. Criação do Banco de Dados (Athena)
-
-```sql
-CREATE DATABASE datalake_refined;
-```
-
----
-
-## 📊 4. Resultados Obtidos
-
-| Resultado | Descrição |
-| :--- | :--- |
-| ✅ **Arquivos .parquet válidos** | Nenhum erro de schema |
-| ✅ **Dados completos** | Campos **titulo**, **genero**, **notamedia**, etc |
-| ✅ **Athena funcionando** | Consultas e filtros executados com sucesso |
-| ✅ **Preparado para QuickSight** | Estrutura limpa, pronta para camada **Gold** |
+* **Caminho S3:** `s3://data-lake-luis/Refined/FilmesSeries/`
+* **Database:** `refined_data_lake`
+* **Tabela Gerada:** `filmesseries`
