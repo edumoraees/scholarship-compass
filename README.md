@@ -190,8 +190,3 @@ Data Lake
 ## Autor
 
 **Luis Eduardo Moraes**
-
-Profissional de tecnologia direcionando sua carreira para **Engenharia de Dados e Cloud Computing**, com foco em Python, SQL, PySpark e AWS.
-
-* LinkedIn: luismoraesss
-* GitHub: @edumoraees
